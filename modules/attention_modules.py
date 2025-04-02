@@ -131,11 +131,3 @@ class SKConv(nn.Module):
         # Взвешиваем признаки по ветвям и суммируем
         V = (feats * weights).sum(dim=1)   # (batch, C, H, W)
         return V
-
-# class SKAttention(nn.Module):
-#     def __init__(self, channels, M=2, r=16):
-#         super().__init__()
-#         self.sk_conv = SKConv(channels, M, r)
-    
-#     def forward(self, x):
-#         return self.sk_conv(x)
