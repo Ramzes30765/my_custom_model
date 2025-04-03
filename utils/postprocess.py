@@ -4,13 +4,15 @@ import numpy as np
 
 
 # ------------------- Top-K Decoder -------------------
-def decode_predictions(cls_outputs, size_outputs, offset_outputs, topk=100):
+def decode_predictions(cls_outputs, size_outputs, offset_outputs, center_outputs, topk=100):
     results = []
-    for cls_map, size_map, offset_map in zip(cls_outputs, size_outputs, offset_outputs):
+    for cls_map, size_map, offset_map, center_map in zip(cls_outputs, size_outputs, offset_outputs, center_outputs):
         B, C, H, W = cls_map.shape
         cls_map = torch.sigmoid(cls_map)
-        cls_map = cls_map.view(B, -1)  # flatten to [B, C * H * W]
-        scores, inds = torch.topk(cls_map, k=topk)
+        center_map = torch.sigmoid(center_map)
+        cls_map = cls_map * center_map
+        cls_map = cls_map.view(B, -1)
+        scores, inds = torch.topk(cls_map, k=topk // 5) # ЭТО ЛЮТЫЙ КОСТЫЛЬ!!!!!!!!!
 
         classes = inds // (H * W)
         pixel_inds = inds % (H * W)

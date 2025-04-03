@@ -19,11 +19,15 @@ class CenterHead(nn.Module):
             nn.ReLU(),
             nn.Conv2d(in_channels, 2, 1)
         )
+        self.center_head = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, 3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(in_channels, 1, 1)
+        )
 
-    def forward(self, feats):  # list of feature maps
-        cls_out, size_out, offset_out = [], [], []
-        for f in feats:
-            cls_out.append(self.cls_head(f))
-            size_out.append(self.size_head(f))
-            offset_out.append(self.offset_head(f))
-        return cls_out, size_out, offset_out
+    def forward(self, cls_feats, reg_feats):
+        cls_out = [self.cls_head(f) for f in cls_feats]
+        size_out = [self.size_head(f) for f in reg_feats]
+        offset_out = [self.offset_head(f) for f in reg_feats]
+        center_out = [self.center_head(f) for f in reg_feats]
+        return cls_out, size_out, offset_out, center_out

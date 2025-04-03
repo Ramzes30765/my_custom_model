@@ -45,7 +45,9 @@ class FusionModule(nn.Module):
         use_skconv=False,
         use_aac=False,
         # cbam params
+        ratio=16,
         # skconv params
+        M=2, r=16,
         # aac params
         dqk=32,
         dv=4,
@@ -55,13 +57,19 @@ class FusionModule(nn.Module):
         super().__init__()
         self.out_channels = out_channels
         self.use_td_cbam = use_td_cbam
+        self.ratio = ratio
         self.use_skconv = use_skconv
+        self.M = M
+        self.r = r
         self.use_aac = use_aac
+        self.dqk = dqk
+        self.dv = dv
+        self.Nh = Nh
         
         # Для топ-даун слияния (p4, p3, p2): три обучаемых набора весов
         self.td_weights = nn.ParameterList([nn.Parameter(torch.ones(2, dtype=torch.float32)) for _ in range(3)])
         if self.use_td_cbam:
-            self.td_cbam_modules = nn.ModuleList([CBAM(out_channels) for _ in range(3)])
+            self.td_cbam_modules = nn.ModuleList([CBAM(out_channels, self.ratio) for _ in range(3)])
         
         # Для bottom-up слияния (p3, p4, p5): три обучаемых набора весов
         self.bu_weights = nn.ParameterList([nn.Parameter(torch.ones(2, dtype=torch.float32)) for _ in range(3)])
@@ -72,11 +80,11 @@ class FusionModule(nn.Module):
         # Для bottom-up fusion на уровнях p3, p4, p5 можно применить SKConv и/или AAC.
         if self.use_skconv:
             self.skconv_modules = nn.ModuleList([
-                SKConv(out_channels, M=2, r=16) for _ in range(3)
+                SKConv(out_channels, M=self.M, r=self.r) for _ in range(3)
             ])
         if self.use_aac:
             self.aac_modules = nn.ModuleList([
-                AttentionAugmentedConv(out_channels, out_channels, kernel_size=3, dqk=dqk, dv=dv, Nh=Nh) for _ in range(3)
+                AttentionAugmentedConv(out_channels, out_channels, kernel_size=3, dqk=self.dqk, dv=self.dv, Nh=self.Nh) for _ in range(3)
             ])
     
     def _weighted_sum(self, x, y, weights):
@@ -158,18 +166,9 @@ class BiFPN(nn.Module):
       - use_skconv: применять SKConv в bottom-up пути fusion
       - use_aac: применять AttentionAugmentedConv в bottom-up пути fusion
     """
-    def __init__(self, backbone='resnet50', out_channels=256, num_layers=1,
+    def __init__(self, in_channels_list, out_channels=256, num_layers=1,
                  use_lateral_cbam=False, use_td_cbam=False, use_skconv=False, use_aac=False):
         super().__init__()
-        self.backbone = timm.create_model(
-            backbone,
-            features_only=True,
-            out_indices=(-4, -3, -2, -1),
-            pretrained=True
-        )
-        # Берем первые 4 уровня признаков (например, C2-C5)
-        in_channels_list = self.backbone.feature_info.channels()[:4]
-        
         self.lateral_module = LateralModule(in_channels_list, out_channels, use_cbam=use_lateral_cbam)
         self.fusion_module = FusionModule(out_channels,
                                           use_td_cbam=use_td_cbam,
@@ -178,12 +177,18 @@ class BiFPN(nn.Module):
                                           )
         self.num_layers = num_layers
     
-    def forward(self, x):
-        features = self.backbone(x)
-        # Применяем lateral модуль к первым 4 признакам
+    def forward(self, features):
         lateral_feats = self.lateral_module(features[:4])
         feats = lateral_feats
-        # Если num_layers > 1, можно повторно применять fusion модуль
+
         for _ in range(self.num_layers):
             feats = self.fusion_module(feats)
-        return tuple(feats)
+            
+        # Генерация P6 и P7 из P5
+        p5 = feats[-1]                            # [B, C, H/32, W/32]
+        p6 = F.max_pool2d(p5, kernel_size=2, stride=2)  # → [B, C, H/64, W/64]
+        p7 = F.max_pool2d(p6, kernel_size=2, stride=2)  # → [B, C, H/128, W/128]
+
+        # Теперь список: [P2, P3, P4, P5, P6, P7]
+        full_feats = feats + [p6, p7]
+        return tuple(full_feats[1:])
