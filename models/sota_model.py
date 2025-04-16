@@ -34,10 +34,10 @@ class MySOTAModel(nn.Module):
         cls_outs, size_outs, offset_outs, center_outs = self.pred_head(cls_feats, reg_feats)
         
         # для отладки
-        print("mean(cls_outs[0])  :", torch.mean(cls_outs[0]))
-        print("mean(size_outs[0]) :", torch.mean(size_outs[0]))
-        print("mean(offset_outs[0]):", torch.mean(offset_outs[0]))
-        print("mean(center_outs[0]):", torch.mean(center_outs[0]))
+        # print("mean(cls_outs[0])  :", torch.mean(cls_outs[0]))
+        # print("mean(size_outs[0]) :", torch.mean(size_outs[0]))
+        # print("mean(offset_outs[0]):", torch.mean(offset_outs[0]))
+        # print("mean(center_outs[0]):", torch.mean(center_outs[0]))
 
         if not return_preds:
             return {

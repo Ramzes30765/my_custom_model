@@ -79,26 +79,3 @@ def generate_target_maps(boxes, classes, output_shape, num_classes, stride, sigm
         mask[grid_y, grid_x] = 1.0
 
     return heatmap, size_target, offset_target, mask
-
-# Пример использования
-if __name__ == "__main__":
-    # Допустим, исходное изображение 512x512, stride = 4 → размер карты признаков 128x128
-    output_shape = (128, 128)
-    num_classes = 20
-    stride = 4
-    sigma = 2.0
-
-    # Пример ground truth: 2 бокса (координаты в пикселях) и их классы
-    boxes = torch.tensor([
-        [50, 60, 150, 200],
-        [300, 350, 400, 450]
-    ], dtype=torch.float32)
-    classes = torch.tensor([3, 7], dtype=torch.int64)
-
-    heatmap, size_target, offset_target, mask = generate_target_maps(
-        boxes, classes, output_shape, num_classes, stride, sigma
-    )
-    print("Heatmap shape:", heatmap.shape)
-    print("Size target shape:", size_target.shape)
-    print("Offset target shape:", offset_target.shape)
-    print("Mask shape:", mask.shape)
