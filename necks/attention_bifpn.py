@@ -161,6 +161,7 @@ class BiFPN(nn.Module):
     Позволяет задавать количество слоёв BiFPN и включать/выключать attention-модули.
     
     Параметры:
+        ....
       - use_lateral_cbam: применять CBAM после lateral свёрток
       - use_td_cbam: применять CBAM в топ-даун пути fusion
       - use_skconv: применять SKConv в bottom-up пути fusion

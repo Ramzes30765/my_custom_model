@@ -19,11 +19,13 @@ def generate_target_maps(boxes, classes, output_shape, num_classes, stride, sigm
       offset_target: Tensor размером [2, H, W] – смещение центра объекта относительно целочисленной координаты на карте
       mask: Tensor размером [H, W] – бинарная маска (1, если в данной ячейке находится центр объекта)
     """
+    device = boxes.device
+    
     H, W = output_shape
-    heatmap = torch.zeros((num_classes, H, W), dtype=torch.float32)
-    size_target = torch.zeros((2, H, W), dtype=torch.float32)
-    offset_target = torch.zeros((2, H, W), dtype=torch.float32)
-    mask = torch.zeros((H, W), dtype=torch.float32)
+    heatmap = torch.zeros((num_classes, H, W), dtype=torch.float32, device=device)
+    size_target = torch.zeros((2, H, W), dtype=torch.float32, device=device)
+    offset_target = torch.zeros((2, H, W), dtype=torch.float32, device=device)
+    mask = torch.zeros((H, W), dtype=torch.float32, device=device)
 
     # Обработка каждого ground truth
     for i in range(boxes.shape[0]):
@@ -54,8 +56,8 @@ def generate_target_maps(boxes, classes, output_shape, num_classes, stride, sigm
         bottom = min(H, grid_y + radius + 1)
 
         # Создаем локальную сетку для окна
-        y_coords = torch.arange(top, bottom, dtype=torch.float32)
-        x_coords = torch.arange(left, right, dtype=torch.float32)
+        y_coords = torch.arange(top, bottom, dtype=torch.float32, device=device)
+        x_coords = torch.arange(left, right, dtype=torch.float32, device=device)
         yy, xx = torch.meshgrid(y_coords, x_coords, indexing='ij')
         # Вычисляем квадрат расстояния до истинного центра (cx_f, cy_f)
         d2 = (xx - cx_f) ** 2 + (yy - cy_f) ** 2

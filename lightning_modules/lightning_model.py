@@ -82,7 +82,7 @@ class SOTALitModule(pl.LightningModule):
 
         return loss_dict["total"]
 
-    def validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self, outputs):
         # Вычисляем и логируем метрики
         metrics = self.metrics.compute()
         self.log("val/map", metrics["map"], prog_bar=True)

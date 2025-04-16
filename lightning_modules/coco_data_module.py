@@ -13,21 +13,24 @@ class CocoDetectionWrapper(CocoDetection):
         super().__init__(img_folder, ann_file)
         self.transform = transform
 
+        # СОЗДАЁМ отображение category_id → индекс [0..N-1]
+        coco_cat_ids = self.coco.getCatIds()
+        self.cat_id_to_index = {cat_id: idx for idx, cat_id in enumerate(coco_cat_ids)}
+
     def __getitem__(self, index):
         img, target = super().__getitem__(index)
 
-        # Собираем боксы и классы
         boxes = []
         labels = []
         for obj in target:
             x, y, w, h = obj['bbox']
             boxes.append([x, y, x + w, y + h])
-            labels.append(obj['category_id'])
+            # Преобразуем category_id → 0-based index
+            labels.append(self.cat_id_to_index[obj['category_id']])
 
         boxes = np.array(boxes)
         labels = np.array(labels)
 
-        # Albumentations transform
         if self.transform:
             transformed = self.transform(image=np.array(img), bboxes=boxes, class_labels=labels)
             img = transformed['image']
@@ -48,14 +51,20 @@ class COCODetectionDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
 
     def setup(self, stage=None):
+        
+        train_img_dir = os.path.join(self.root_dir, "train2017")
+        val_img_dir = os.path.join(self.root_dir, "val2017")
+        train_ann_path = os.path.join(self.root_dir, self.ann_train)
+        val_ann_path = os.path.join(self.root_dir, self.ann_val)
+
         self.train_dataset = CocoDetectionWrapper(
-            img_folder=os.path.join(self.root_dir, "train2017"),
-            ann_file=self.ann_train,
+            img_folder=train_img_dir,
+            ann_file=train_ann_path,
             transform=self.train_transform()
         )
         self.val_dataset = CocoDetectionWrapper(
-            img_folder=os.path.join(self.root_dir, "val2017"),
-            ann_file=self.ann_val,
+            img_folder=val_img_dir,
+            ann_file=val_ann_path,
             transform=self.val_transform()
         )
 

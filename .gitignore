@@ -3,3 +3,5 @@
 *.ipynb
 test.ipynb
 coco
+tb_logs
+logs

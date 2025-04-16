@@ -16,12 +16,12 @@ def parse_args():
     # основные параметры
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--batch_size", type=int, default=8)
-    parser.add_argument("--image_size", type=int, nargs=2, default=[512, 512])
+    parser.add_argument("--image_size", type=int, nargs=2, default=[224, 224])
     parser.add_argument("--num_classes", type=int, default=80)
-    parser.add_argument("--max_epochs", type=int, default=100)
+    parser.add_argument("--max_epochs", type=int, default=10)
 
     # пути к COCO
-    parser.add_argument("--coco_root", type=str, required=True, help="Путь к каталогу COCO (с train2017, val2017 и annotations)")
+    parser.add_argument("--coco_root", type=str, required=True, help="Путь к каталогу COCO (с train2017, val2017 и annotations)", default='coco')
     parser.add_argument("--train_ann", type=str, default="annotations/instances_train2017.json")
     parser.add_argument("--val_ann", type=str, default="annotations/instances_val2017.json")
 
@@ -31,6 +31,11 @@ def parse_args():
 def main():
     args = parse_args()
     seed_everything(42)
+    
+    assert os.path.exists(os.path.join(args.coco_root, args.train_ann)), "train_ann not found"
+    ann_path = os.path.join(args.coco_root, args.train_ann)
+    print(f"Checking annotation path: {ann_path}")
+    print("Exists:", os.path.exists(ann_path))
 
     task = Task.init(project_name="Anchor-Free Detection", task_name="Train SOTA Model")
     task.connect(vars(args))
