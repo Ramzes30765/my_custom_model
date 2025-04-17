@@ -15,7 +15,7 @@ def parse_args():
 
     # основные параметры
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--image_size", type=int, nargs=2, default=[224, 224])
     parser.add_argument("--num_classes", type=int, default=80)
     parser.add_argument("--max_epochs", type=int, default=10)
@@ -46,7 +46,7 @@ def main():
         ann_val=args.val_ann,
         image_size=tuple(args.image_size),
         batch_size=args.batch_size,
-        num_workers=os.cpu_count()
+        num_workers=4
     )
     dm.setup()
 
@@ -63,7 +63,7 @@ def main():
 
     checkpoint_cb = ModelCheckpoint(
         monitor="val_total",
-        save_top_k=1,
+        save_top_k=3,
         mode="min",
         filename="best-{epoch:02d}-{val_total:.4f}",
         save_last=True
@@ -77,8 +77,11 @@ def main():
         max_epochs=args.max_epochs,
         logger=[logger, csv_logger],
         callbacks=[checkpoint_cb, lr_monitor],
-        precision=16,
-        log_every_n_steps=10
+        precision="16-mixed",
+        log_every_n_steps=10,
+        val_check_interval=250,
+        # limit_val_batches=0.2,
+        check_val_every_n_epoch=None
     )
 
     trainer.fit(lit_model, datamodule=dm)

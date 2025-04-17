@@ -53,7 +53,8 @@ def get_strides_from_feature_maps(input_image_shape, feature_maps):
     return strides
 
 # ------------------- Post-processing -------------------
-def postprocess_predictions(results, features, image_size):
+def postprocess_predictions(results, features, image_size, score_thresh):
+    
     strides = get_strides_from_feature_maps(image_size, features)
     B = results[0][0].shape[0]
     batch_results = []
@@ -61,9 +62,18 @@ def postprocess_predictions(results, features, image_size):
         boxes_all, scores_all, classes_all = [], [], []
         for (boxes, scores, classes), stride in zip(results, strides):
             boxes_b = boxes[b] * stride
+            scores_b = scores[b]
+            classes_b = classes[b]
+
+            # Apply score threshold here
+            keep = scores_b > score_thresh
+            boxes_b = boxes_b[keep]
+            scores_b = scores_b[keep]
+            classes_b = classes_b[keep]
+
             boxes_all.append(boxes_b)
-            scores_all.append(scores[b])
-            classes_all.append(classes[b])
+            scores_all.append(scores_b)
+            classes_all.append(classes_b)
 
         boxes_all = torch.cat(boxes_all, dim=0)
         scores_all = torch.cat(scores_all, dim=0)
@@ -78,27 +88,3 @@ def postprocess_predictions(results, features, image_size):
         batch_results.append((boxes_all, scores_all, classes_all))
 
     return batch_results
-
-def visualize_boxes(image, boxes, scores, classes, class_names=None, score_thresh=0.3):
-
-    if isinstance(image, torch.Tensor):
-        image = image.detach().cpu().numpy()
-        if image.shape[0] == 3:  # [C, H, W] → [H, W, C]
-            image = np.transpose(image, (1, 2, 0))
-        image = (image * 255).astype(np.uint8)
-
-    image = image.copy()
-
-    for box, score, cls in zip(boxes, scores, classes):
-        if score < score_thresh:
-            continue
-        x1, y1, x2, y2 = map(int, box.tolist())
-        color = (0, 255, 0)
-        label = f"{class_names[cls]}: {score:.2f}" if class_names else f"{int(cls)}: {score:.2f}"
-
-        cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
-        ((text_width, text_height), _) = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(image, (x1, y1 - text_height - 4), (x1 + text_width, y1), color, -1)
-        cv2.putText(image, label, (x1, y1 - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
-
-    return image

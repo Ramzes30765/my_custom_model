@@ -13,35 +13,51 @@ class CocoDetectionWrapper(CocoDetection):
         super().__init__(img_folder, ann_file)
         self.transform = transform
 
-        # СОЗДАЁМ отображение category_id → индекс [0..N-1]
+        # category_id → индекс [0..N-1]
         coco_cat_ids = self.coco.getCatIds()
         self.cat_id_to_index = {cat_id: idx for idx, cat_id in enumerate(coco_cat_ids)}
 
     def __getitem__(self, index):
         img, target = super().__getitem__(index)
 
+        original_img = np.array(img)
+        original_size = original_img.shape[:2]
+
         boxes = []
         labels = []
         for obj in target:
             x, y, w, h = obj['bbox']
             boxes.append([x, y, x + w, y + h])
-            # Преобразуем category_id → 0-based index
             labels.append(self.cat_id_to_index[obj['category_id']])
 
-        boxes = np.array(boxes)
-        labels = np.array(labels)
+        boxes_np = np.array(boxes, dtype=np.float32)
+        labels_np = np.array(labels, dtype=np.int64)
+        
+            # Сохраняем оригинальные таргеты
+        original_targets = {
+            "boxes": torch.tensor(boxes_np, dtype=torch.float32),
+            "labels": torch.tensor(labels_np, dtype=torch.long)
+        }
 
         if self.transform:
-            transformed = self.transform(image=np.array(img), bboxes=boxes, class_labels=labels)
+            transformed = self.transform(image=original_img, bboxes=boxes, class_labels=labels)
             img = transformed['image']
             boxes = torch.tensor(transformed['bboxes'], dtype=torch.float32)
             labels = torch.tensor(transformed['class_labels'], dtype=torch.long)
+        else:
+            img = torch.from_numpy(original_img).permute(2, 0, 1).float() / 255.
 
-        return img, {'boxes': boxes, 'labels': labels}
+        return img, {
+            "boxes": boxes,
+            "labels": labels,
+            "orig_image": original_img,
+            "original_size": original_size,
+            "original_targets": original_targets
+        }
 
 
 class COCODetectionDataModule(pl.LightningDataModule):
-    def __init__(self, root_dir, ann_train, ann_val, image_size=(512, 512), batch_size=8, num_workers=4):
+    def __init__(self, root_dir, ann_train, ann_val, image_size=(512, 512), batch_size=8, num_workers=0):
         super().__init__()
         self.root_dir = root_dir
         self.ann_train = ann_train
@@ -69,20 +85,44 @@ class COCODetectionDataModule(pl.LightningDataModule):
         )
 
     def train_transform(self):
+        
+        bbox_params = A.BboxParams(
+            format='pascal_voc',
+            label_fields=['class_labels'],
+            min_area=1.0,
+            min_visibility=0.1,
+            min_width=1,
+            min_height=1,
+            clip=True,
+            filter_invalid_bboxes=True
+        )
+        
         return A.Compose([
             A.Resize(*self.image_size),
             A.HorizontalFlip(p=0.5),
             A.RandomBrightnessContrast(p=0.2),
-            A.Normalize(),
+            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             ToTensorV2()
-        ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
+        ], bbox_params=bbox_params)
 
     def val_transform(self):
+        
+        bbox_params = A.BboxParams(
+            format='pascal_voc',
+            label_fields=['class_labels'],
+            min_area=1.0,
+            min_visibility=0.1,
+            min_width=1,
+            min_height=1,
+            clip=True,
+            filter_invalid_bboxes=True
+        )
+        
         return A.Compose([
             A.Resize(*self.image_size),
-            A.Normalize(),
+            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             ToTensorV2()
-        ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
+        ], bbox_params=bbox_params)
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset, batch_size=self.batch_size,

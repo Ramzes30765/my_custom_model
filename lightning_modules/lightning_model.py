@@ -5,6 +5,8 @@ from loss.compute_loss import TotalLoss
 from utils.preprocess import generate_target_maps
 from utils.postprocess import get_strides_from_feature_maps
 from metrics.detection_metrics import DetectionMetricsWrapper
+from metrics.compute_metrics import compute_det_metrics
+from utils.vizualization import visualize_batch_detections
 
 
 class SOTALitModule(pl.LightningModule):
@@ -28,7 +30,10 @@ class SOTALitModule(pl.LightningModule):
         gt_targets = self._build_targets(targets, preds["features"])
         loss_dict = self.criterion(preds, gt_targets)
 
-        self.log_dict(loss_dict, on_step=True, on_epoch=True, prog_bar=True)
+        self.log_dict(
+            {f"train_{k}": v for k, v in loss_dict.items()},
+            on_step=True, on_epoch=True, prog_bar=True, batch_size=images.size(0), precision=6
+        )
         return loss_dict["total"]
 
     def validation_step(self, batch, batch_idx):
@@ -38,7 +43,11 @@ class SOTALitModule(pl.LightningModule):
         preds = self.model(images)
         gt_targets = self._build_targets(targets, preds["features"])
         loss_dict = self.criterion(preds, gt_targets)
-        self.log_dict({f"val_{k}": v for k, v in loss_dict.items()}, prog_bar=True)
+
+        self.log_dict(
+            {f"val_{k}": v for k, v in loss_dict.items()},
+            on_step=True, on_epoch=True, prog_bar=True, batch_size=images.size(0), precision=6
+        )
 
         # Пропускаем sanity check
         if self.trainer.sanity_checking:
@@ -53,45 +62,71 @@ class SOTALitModule(pl.LightningModule):
                 boxes, scores, labels = pred
 
                 # Обновляем метрики
-                self.metrics.update(
-                    preds=[{
-                        "boxes": boxes.detach().cpu(),
-                        "scores": scores.detach().cpu(),
-                        "labels": labels.detach().cpu().int()
-                    }],
-                    targets=[{
-                        "boxes": target["boxes"].detach().cpu(),
-                        "labels": target["labels"].detach().cpu().int()
-                    }]
-                )
+                compute_det_metrics(preds=(boxes, scores, labels), targets=target, metric_obj=self.metrics)
+                
+                # self.metrics.update(
+                #     preds=[{
+                #         "boxes": boxes.detach().cpu(),
+                #         "scores": scores.detach().cpu(),
+                #         "labels": labels.detach().cpu().int()
+                #     }],
+                #     targets=[{
+                #         "boxes": target["boxes"].detach().cpu(),
+                #         "labels": target["labels"].detach().cpu().int()
+                #     }]
+                # )
 
                 # Визуализация первых N картинок на 1-м батче каждой 5-й эпохи
-                if batch_idx == 0 and i < 4 and self.current_epoch % 5 == 0:
-                    vis_img = self.model.visualize(
-                        image=images[i].detach().cpu(),
-                        preds=(boxes, scores, labels),
-                        class_names=None,
-                        score_thresh=0.3
-                    )
-                    vis_img = torch.from_numpy(vis_img).permute(2, 0, 1).float() / 255.0
-                    self.logger.experiment.add_image(
-                        tag=f"val/pred_epoch{self.current_epoch}_img{i}",
-                        img_tensor=vis_img,
-                        global_step=self.global_step
-                    )
+                # if batch_idx == 0 and i < 4 and self.current_epoch % 5 == 0:
+                #     vis_img = self.model.visualize(
+                #         image=images[i].detach().cpu(),
+                #         preds=(boxes, scores, labels),
+                #         class_names=None,
+                #         score_thresh=0.3
+                #     )
+                #     vis_img = torch.from_numpy(vis_img).permute(2, 0, 1).float() / 255.0
+                #     self.logger.experiment.add_image(
+                #         tag=f"val/pred_epoch{self.current_epoch}_img{i}",
+                #         img_tensor=vis_img,
+                #         global_step=self.global_step
+                #     )
+                if batch_idx == torch.randint(0, self.hparams.batch_size):  # например, 10% батчей
+                    orig_images = [t["orig_image"] for t in targets]
+                    orig_sizes = [t["original_size"] for t in targets]
+                    preds_list = [
+                        self.model.predict(img, image_size=self.image_size, original_size=size)
+                        for img, size in zip(images, orig_sizes)
+                    ]
+
+                    vis_grid = visualize_batch_detections(orig_images, preds_list, score_thresh=0.3)
+                    self.logger.experiment.add_image("val/predictions_grid", vis_grid, global_step=self.global_step)
 
         return loss_dict["total"]
 
-    def on_validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self):
+        
+        if self.trainer.sanity_checking:
+            return # не трогаем метрики, пока sanity check
+        
         # Вычисляем и логируем метрики
         metrics = self.metrics.compute()
         self.log("val/map", metrics["map"], prog_bar=True)
-        self.log("val/map_50", metrics["map_50"], prog_bar=False)
-        self.log("val/map_75", metrics["map_75"], prog_bar=False)
+        self.log("val/map_50", metrics["map_50"], prog_bar=True)
+        self.log("val/map_75", metrics["map_75"], prog_bar=True)
         self.metrics.reset()
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        T_max = self.hparams.max_epochs if hasattr(self.hparams, "max_epochs") else 50
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max, eta_min=1e-6)
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': {
+                'scheduler': scheduler,
+                'interval': 'epoch',
+                'frequency': 1
+            }
+        }
 
     def _build_targets(self, batch_targets, features):
         """
