@@ -61,13 +61,33 @@ class TotalLoss(nn.Module):
         self.weight_offset = weight_offset
 
     def forward(self, preds, targets):
-        heatmap = targets['heatmap']
-        mask = heatmap.amax(dim=1, keepdim=True).eq(1).float()
+        
+        heatmaps = targets['heatmap']     # List[Tensors], по уровням
+        sizes = targets['size'] # List[Tensors], по уровням
+        offsets = targets['offset'] # List[Tensors], по уровням
+        
+        masks = [h.amax(dim=1, keepdim=True).eq(1).float() for h in heatmaps] # [[B, 1, H, W], ..., [B, 1, H, W]]
 
-        cls_loss = sum([self.cls_loss_fn(p, heatmap) for p in preds['cls']]) / len(preds['cls'])
-        center_loss = sum([self.center_loss_fn(p, heatmap) for p in preds['center']]) / len(preds['center'])
-        size_loss = sum([self.size_loss_fn(p, targets['size'], mask) for p in preds['size']]) / len(preds['size'])
-        offset_loss = sum([self.offset_loss_fn(p, targets['offset'], mask) for p in preds['offset']]) / len(preds['offset'])
+        # Подсчёт потерь по каждому уровню
+        cls_loss = sum([
+            self.cls_loss_fn(p, t)
+            for p, t in zip(preds['cls'], heatmaps)
+        ]) / len(preds['cls'])
+
+        center_loss = sum([
+            self.center_loss_fn(p, t)
+            for p, t in zip(preds['center'], heatmaps)
+        ]) / len(preds['center'])
+
+        size_loss = sum([
+            self.size_loss_fn(p, t, m)
+            for p, t, m in zip(preds['size'], sizes, masks)
+        ]) / len(preds['size'])
+
+        offset_loss = sum([
+            self.offset_loss_fn(p, t, m)
+            for p, t, m in zip(preds['offset'], offsets, masks)
+        ]) / len(preds['offset'])
 
         total = (
             self.weight_cls * cls_loss +
