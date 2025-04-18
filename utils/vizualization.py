@@ -35,7 +35,7 @@ def visualize_boxes(image, boxes, scores, classes, class_names=None):
 
     return image
 
-def visualize_batch_detections(images, preds_list, score_thresh=0.3):
+def visualize_batch_detections(images, preds_list):
     """
     images: list of original images (np.ndarray или torch.Tensor [3,H,W])
     preds_list: list of (boxes, scores, labels) from model.predict()
@@ -44,7 +44,7 @@ def visualize_batch_detections(images, preds_list, score_thresh=0.3):
     vis_images = []
     for img, preds in zip(images, preds_list):
         boxes, scores, labels = preds
-        vis = visualize_boxes(img, boxes, scores, labels, score_thresh=score_thresh)
+        vis = visualize_boxes(img, boxes, scores, labels,)
         vis_tensor = torch.from_numpy(vis).permute(2, 0, 1).float() / 255.0
         vis_images.append(vis_tensor)
 

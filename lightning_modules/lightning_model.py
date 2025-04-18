@@ -1,3 +1,5 @@
+import random
+
 import pytorch_lightning as pl
 import torch
 
@@ -7,6 +9,7 @@ from utils.postprocess import get_strides_from_feature_maps
 from metrics.detection_metrics import DetectionMetricsWrapper
 from metrics.compute_metrics import compute_det_metrics
 from utils.vizualization import visualize_batch_detections
+from utils.debug_viz import visualize_debug_targets
 
 
 class SOTALitModule(pl.LightningModule):
@@ -17,7 +20,7 @@ class SOTALitModule(pl.LightningModule):
         self.lr = learning_rate
         self.num_classes = num_classes
         self.image_size = image_size  # (H, W)
-        self.save_hyperparameters(ignore=["model"])
+        self.save_hyperparameters(ignore=['model'])
 
         # Метрики (torchmetrics)
         self.metrics = DetectionMetricsWrapper()
@@ -32,7 +35,7 @@ class SOTALitModule(pl.LightningModule):
 
         self.log_dict(
             {f"train_{k}": v for k, v in loss_dict.items()},
-            on_step=True, on_epoch=True, prog_bar=True, batch_size=images.size(0), precision=6
+            on_step=True, on_epoch=True, prog_bar=True, batch_size=images.size(0)
         )
         return loss_dict["total"]
 
@@ -46,7 +49,7 @@ class SOTALitModule(pl.LightningModule):
 
         self.log_dict(
             {f"val_{k}": v for k, v in loss_dict.items()},
-            on_step=True, on_epoch=True, prog_bar=True, batch_size=images.size(0), precision=6
+            on_step=True, on_epoch=True, prog_bar=True, batch_size=images.size(0)
         )
 
         # Пропускаем sanity check
@@ -90,7 +93,8 @@ class SOTALitModule(pl.LightningModule):
                 #         img_tensor=vis_img,
                 #         global_step=self.global_step
                 #     )
-                if batch_idx == torch.randint(0, self.hparams.batch_size):  # например, 10% батчей
+                batch_size = self.hparams.batch_size if hasattr(self.hparams, "batch_size") else 8
+                if batch_idx == random.randint(0, batch_size - 1):
                     orig_images = [t["orig_image"] for t in targets]
                     orig_sizes = [t["original_size"] for t in targets]
                     preds_list = [
@@ -98,8 +102,18 @@ class SOTALitModule(pl.LightningModule):
                         for img, size in zip(images, orig_sizes)
                     ]
 
-                    vis_grid = visualize_batch_detections(orig_images, preds_list, score_thresh=0.3)
+                    vis_grid = visualize_batch_detections(orig_images, preds_list)
                     self.logger.experiment.add_image("val/predictions_grid", vis_grid, global_step=self.global_step)
+                
+            debug_grid = visualize_debug_targets(
+                image=targets[i]["orig_image"],
+                boxes=targets[i]["original_targets"]["boxes"],
+                labels=targets[i]["original_targets"]["labels"],
+                heatmaps=gt_targets["heatmap"],
+                masks=[h.amax(dim=1, keepdim=True).gt(0.1).float() for h in gt_targets["heatmap"]],
+                preds=preds["cls"]
+            )
+            self.logger.experiment.add_image("debug/targets_vs_preds", debug_grid, self.global_step)
 
         return loss_dict["total"]
 
@@ -117,7 +131,7 @@ class SOTALitModule(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        T_max = self.hparams.max_epochs if hasattr(self.hparams, "max_epochs") else 50
+        T_max = self.hparams.max_epochs if hasattr(self.hparams, "max_epochs") else 10
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max, eta_min=1e-6)
         return {
             'optimizer': optimizer,

@@ -79,8 +79,8 @@ def main():
         callbacks=[checkpoint_cb, lr_monitor],
         precision="16-mixed",
         log_every_n_steps=10,
-        val_check_interval=250,
-        # limit_val_batches=0.2,
+        val_check_interval=200,
+        limit_val_batches=0.5,
         check_val_every_n_epoch=None
     )
 
