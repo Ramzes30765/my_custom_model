@@ -12,7 +12,7 @@ def decode_predictions(cls_outputs, size_outputs, offset_outputs, center_outputs
         center_map = torch.sigmoid(center_map)
         cls_map = cls_map * center_map
         cls_map = cls_map.view(B, -1) 
-        scores, inds = torch.topk(cls_map, k=topk // 5) #TODO #FIXME ЭТО ЛЮТЫЙ КОСТЫЛЬ!!!!!!!!!
+        scores, inds = torch.topk(cls_map, k=topk // 5) #FIXME ЭТО ЛЮТЫЙ КОСТЫЛЬ!!!!!!!!!
 
         classes = inds // (H * W)
         pixel_inds = inds % (H * W)

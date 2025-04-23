@@ -4,6 +4,7 @@ from torch.nn import functional as F
 from typing import Optional, Tuple, List
 
 from utils.postprocess import decode_predictions, postprocess_predictions
+
 from utils.vizualization import visualize_boxes
 
 class MySOTAModel(nn.Module):
@@ -24,7 +25,8 @@ class MySOTAModel(nn.Module):
 
     def forward(self, x: torch.Tensor, return_preds: bool = False,
                 image_size: Optional[Tuple[int, int]] = None,
-                topk: int = 100, score_thresh: float = 0.3):
+                topk: int = 100, score_thresh: float = 0.3
+                ):
         """
         x: input image tensor [B, 3, H, W]
         return_preds: whether to return decoded predictions
@@ -36,6 +38,11 @@ class MySOTAModel(nn.Module):
         cls_feats, reg_feats = self.head(neck_feats)
         cls_outs, size_outs, offset_outs, center_outs = self.pred_head(cls_feats, reg_feats)
 
+        # print("Neck feats shapes:", [f.shape for f in neck_feats])
+        # print("Cls feats shapes:", [f.shape for f in cls_feats])
+        # print("Cls outs shapes:", [f.shape for f in cls_outs])
+        # print("")
+        
         if not return_preds:
             return {
                 "cls": cls_outs,

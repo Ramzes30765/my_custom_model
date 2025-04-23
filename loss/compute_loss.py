@@ -19,7 +19,8 @@ class FocalLoss(nn.Module):
         pos_loss = -torch.log(pred) * torch.pow(1 - pred, self.alpha) * pos_inds
         neg_loss = -torch.log(1 - pred) * torch.pow(pred, self.alpha) * neg_weights * neg_inds
 
-        num_pos = pos_inds.float().sum()
+        # num_pos = pos_inds.float().sum()
+        num_pos = max(pos_inds.float().sum(), 1.0) #TODO
         pos_loss = pos_loss.sum()
         neg_loss = neg_loss.sum()
 
@@ -47,7 +48,7 @@ class TotalLoss(nn.Module):
     def __init__(self,
                  weight_cls=1.0,
                  weight_center=1.0,
-                 weight_size=0.1,
+                 weight_size=1.0,
                  weight_offset=1.0):
         super().__init__()
         self.cls_loss_fn = FocalLoss()
@@ -60,14 +61,30 @@ class TotalLoss(nn.Module):
         self.weight_size = weight_size
         self.weight_offset = weight_offset
 
-    def forward(self, preds, targets):
+    def forward(self, preds, targets, debug=False):
         
         heatmaps = targets['heatmap']     # List[Tensors], по уровням
         sizes = targets['size'] # List[Tensors], по уровням
         offsets = targets['offset'] # List[Tensors], по уровням
         
-        masks = [h.amax(dim=1, keepdim=True).eq(1).float() for h in heatmaps] # [[B, 1, H, W], ..., [B, 1, H, W]]
+        masks = [h.amax(dim=1, keepdim=True).gt(0.5).float() for h in heatmaps] # [[B, 1, H, W], ..., [B, 1, H, W]] #XXX
 
+        if debug:
+            for idx, m in enumerate(masks):
+                mask_sum = m.sum().item()
+                if mask_sum == 0:
+                    print(f"[WARN] Level {idx}: EMPTY mask detected!")
+                else:
+                    print(f"[INFO] Level {idx}: mask sum = {mask_sum}")
+
+        if debug:
+            for i in range(len(preds['cls'])):
+                assert preds['cls'][i].shape == heatmaps[i].shape, f"cls shape mismatch at level {i}"
+                assert preds['center'][i].shape[2:] == heatmaps[i].shape[2:], f"center shape mismatch at level {i}"
+                assert preds['size'][i].shape[2:] == heatmaps[i].shape[2:], f"size shape mismatch at level {i}"
+                assert preds['offset'][i].shape[2:] == heatmaps[i].shape[2:], f"offset shape mismatch at level {i}"
+
+        
         # Подсчёт потерь по каждому уровню
         cls_loss = sum([
             self.cls_loss_fn(p, t)

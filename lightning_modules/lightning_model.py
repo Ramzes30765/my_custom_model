@@ -2,6 +2,8 @@ import random
 
 import pytorch_lightning as pl
 import torch
+import matplotlib.pyplot as plt
+from clearml import Task
 
 from loss.compute_loss import TotalLoss
 from utils.preprocess import generate_target_maps
@@ -9,7 +11,7 @@ from utils.postprocess import get_strides_from_feature_maps
 from metrics.detection_metrics import DetectionMetricsWrapper
 from metrics.compute_metrics import compute_det_metrics
 from utils.vizualization import visualize_batch_detections
-from utils.debug_viz import visualize_debug_targets
+from utils.debug_viz import visualize_debug_targets_matplotlib
 
 
 class SOTALitModule(pl.LightningModule):
@@ -31,7 +33,12 @@ class SOTALitModule(pl.LightningModule):
 
         preds = self.model(images)
         gt_targets = self._build_targets(targets, preds["features"])
-        loss_dict = self.criterion(preds, gt_targets)
+        
+        loss_dict = self.criterion(
+            preds,
+            gt_targets,
+            # debug=(batch_idx==0)
+            )
 
         self.log_dict(
             {f"train_{k}": v for k, v in loss_dict.items()},
@@ -44,8 +51,12 @@ class SOTALitModule(pl.LightningModule):
         images = torch.stack(images)
 
         preds = self.model(images)
-        gt_targets = self._build_targets(targets, preds["features"])
-        loss_dict = self.criterion(preds, gt_targets)
+        gt_targets = self._build_targets(targets, preds["features"]) #[ ]
+        loss_dict = self.criterion(
+            preds,
+            gt_targets,
+            # debug=(batch_idx==0)
+            )
 
         self.log_dict(
             {f"val_{k}": v for k, v in loss_dict.items()},
@@ -67,53 +78,48 @@ class SOTALitModule(pl.LightningModule):
                 # Обновляем метрики
                 compute_det_metrics(preds=(boxes, scores, labels), targets=target, metric_obj=self.metrics)
                 
-                # self.metrics.update(
-                #     preds=[{
-                #         "boxes": boxes.detach().cpu(),
-                #         "scores": scores.detach().cpu(),
-                #         "labels": labels.detach().cpu().int()
-                #     }],
-                #     targets=[{
-                #         "boxes": target["boxes"].detach().cpu(),
-                #         "labels": target["labels"].detach().cpu().int()
-                #     }]
-                # )
-
-                # Визуализация первых N картинок на 1-м батче каждой 5-й эпохи
-                # if batch_idx == 0 and i < 4 and self.current_epoch % 5 == 0:
-                #     vis_img = self.model.visualize(
-                #         image=images[i].detach().cpu(),
-                #         preds=(boxes, scores, labels),
-                #         class_names=None,
-                #         score_thresh=0.3
-                #     )
-                #     vis_img = torch.from_numpy(vis_img).permute(2, 0, 1).float() / 255.0
-                #     self.logger.experiment.add_image(
-                #         tag=f"val/pred_epoch{self.current_epoch}_img{i}",
-                #         img_tensor=vis_img,
-                #         global_step=self.global_step
-                #     )
                 batch_size = self.hparams.batch_size if hasattr(self.hparams, "batch_size") else 8
                 if batch_idx == random.randint(0, batch_size - 1):
+                    
+                    vis_img = self.model.visualize(
+                            image=images[i].detach().cpu(),
+                            preds=(boxes, scores, labels),
+                            class_names=None
+                        )
+                    vis_img = torch.from_numpy(vis_img).permute(2, 0, 1).float() / 255.0
+                    self.logger.experiment.add_image(
+                        tag=f"val/pred_epoch{self.current_epoch}_img{i}",
+                        img_tensor=vis_img,
+                        global_step=self.global_step
+                    )
+                    
                     orig_images = [t["orig_image"] for t in targets]
-                    orig_sizes = [t["original_size"] for t in targets]
+                    orig_sizes  = [t["original_size"] for t in targets]
+
                     preds_list = [
                         self.model.predict(img, image_size=self.image_size, original_size=size)
                         for img, size in zip(images, orig_sizes)
                     ]
 
-                    vis_grid = visualize_batch_detections(orig_images, preds_list)
-                    self.logger.experiment.add_image("val/predictions_grid", vis_grid, global_step=self.global_step)
-                
-            debug_grid = visualize_debug_targets(
-                image=targets[i]["orig_image"],
-                boxes=targets[i]["original_targets"]["boxes"],
-                labels=targets[i]["original_targets"]["labels"],
-                heatmaps=gt_targets["heatmap"],
-                masks=[h.amax(dim=1, keepdim=True).gt(0.1).float() for h in gt_targets["heatmap"]],
-                preds=preds["cls"]
-            )
-            self.logger.experiment.add_image("debug/targets_vs_preds", debug_grid, self.global_step)
+                    fig = visualize_batch_detections(
+                        images=orig_images,
+                        preds_list=preds_list,
+                        score_thresh=0.3,
+                        class_names=None,
+                        nrow=4
+                    )
+
+                    task = Task.current_task()
+                    task.get_logger().report_matplotlib_figure(
+                        title=f"val/random_detections/epoch_{self.current_epoch}",
+                        series=f"step_{self.global_step}",
+                        figure=fig,
+                        iteration=self.global_step
+                    )
+                    plt.close(fig)
+
+                return loss_dict["total"]
+
 
         return loss_dict["total"]
 
