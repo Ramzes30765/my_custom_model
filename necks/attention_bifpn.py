@@ -180,16 +180,15 @@ class BiFPN(nn.Module):
     
     def forward(self, features):
         lateral_feats = self.lateral_module(features[:4])
-        feats = lateral_feats
 
         for _ in range(self.num_layers):
-            feats = self.fusion_module(feats)
+            lateral_feats = self.fusion_module(lateral_feats)
             
         # Генерация P6 и P7 из P5
-        p5 = feats[-1]                            # [B, C, H/32, W/32]
+        p5 = lateral_feats[-1]                            # [B, C, H/32, W/32]
         p6 = F.max_pool2d(p5, kernel_size=2, stride=2)  # → [B, C, H/64, W/64]
         p7 = F.max_pool2d(p6, kernel_size=2, stride=2)  # → [B, C, H/128, W/128]
 
         # Теперь список: [P2, P3, P4, P5, P6, P7]
-        full_feats = feats + [p6, p7]
+        full_feats = lateral_feats + [p6, p7]
         return tuple(full_feats[1:])

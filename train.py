@@ -4,6 +4,8 @@ from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import TensorBoardLogger, CSVLogger
 from clearml import Task
+import matplotlib
+matplotlib.use('Agg')
 
 from lightning_modules.coco_data_module import COCODetectionDataModule
 from lightning_modules.lightning_model import SOTALitModule
