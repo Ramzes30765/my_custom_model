@@ -111,8 +111,8 @@ class SOTALitModule(pl.LightningModule):
             class_names=None,
             nrow=4
         )
-        
-        self.logger.experiment.add_image("val/predictions_grid", fig, global_step=self.global_step)
+        plt.imshow(fig)
+        # self.logger.experiment.add_image("val/predictions_grid", fig, global_step=self.global_step)
         # task = Task.current_task()
         # task.get_logger().report_matplotlib_figure(
         #     title=f"val/random_detections/epoch_{self.current_epoch}",
@@ -120,7 +120,7 @@ class SOTALitModule(pl.LightningModule):
         #     figure=fig,
         #     iteration=self.global_step
         # )
-        plt.imsave('123.jpg', fig)
+        
         plt.close(fig)
         
         return loss_dict["total"]
