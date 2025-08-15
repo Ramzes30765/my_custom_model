@@ -1,0 +1,12 @@
+torch>=2.2
+torchvision
+pytorch-lightning
+albumentations
+opencv-python
+timm
+clearml
+clearml-agent
+pycocotools
+matplotlib
+tensorboard
+torchmetrics

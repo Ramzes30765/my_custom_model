@@ -1,6 +1,17 @@
 import torch
 import torch.nn.functional as F
 
+def get_strides_from_feature_maps(input_image_shape, feature_maps):
+    input_h, input_w = input_image_shape
+    strides = []
+    for fmap in feature_maps:
+        _, _, h_i, w_i = fmap.shape
+        stride_h = input_h // h_i
+        stride_w = input_w // w_i
+        assert stride_h == stride_w, "Non-uniform stride!"
+        strides.append(stride_h)
+    return strides
+
 def generate_target_maps(boxes, classes, output_shape, num_classes, stride, sigma=2.0):
     """
     Генерирует target-карты для обучения модели обнаружения объектов.
@@ -81,3 +92,54 @@ def generate_target_maps(boxes, classes, output_shape, num_classes, stride, sigm
         mask[grid_y, grid_x] = 1.0
 
     return heatmap, size_target, offset_target, mask
+
+def build_targets(batch_targets, features, num_classes, image_size, sigma):
+    """
+    Генерация таргетов под каждый уровень feature map.
+    batch_targets: [{'boxes': Tensor[N, 4], 'labels': Tensor[N]}, ...]
+    features: [P3, P4, P5, ...]
+    """
+    strides = get_strides_from_feature_maps(image_size, features)
+    output_shapes = [(f.shape[2], f.shape[3]) for f in features]
+    B = len(batch_targets)
+
+    heatmaps, sizes, offsets, masks, centers = [], [], [], [], []
+
+    for sample in batch_targets:
+        boxes = sample["boxes"]
+        labels = sample["labels"]
+
+        per_level_heatmaps = []
+        per_level_sizes = []
+        per_level_offsets = []
+        per_level_masks = []
+        per_level_centers = []
+        
+        for (H, W), stride in zip(output_shapes, strides):
+            heatmap, size, offset, mask = generate_target_maps(
+                boxes, labels,
+                output_shape=(H, W),
+                num_classes=num_classes,
+                stride=stride,
+                sigma=sigma
+            )
+            per_level_heatmaps.append(heatmap)
+            per_level_sizes.append(size)
+            per_level_offsets.append(offset)
+            per_level_masks.append(mask)
+            per_level_centers.append(heatmap.amax(dim=0, keepdim=True))
+
+        heatmaps.append(per_level_heatmaps)
+        sizes.append(per_level_sizes)
+        offsets.append(per_level_offsets)
+        masks.append(per_level_masks)
+        centers.append(per_level_centers)
+    
+    L = len(strides)
+    return {
+        "heatmap": [torch.stack([heatmaps[b][l] for b in range(B)]) for l in range(L)],
+        "size": [torch.stack([sizes[b][l] for b in range(B)]) for l in range(L)],
+        "offset": [torch.stack([offsets[b][l] for b in range(B)]) for l in range(L)],
+        "mask": [torch.stack([masks[b][l] for b in range(B)]).unsqueeze(1).float() for l in range(L)],
+        "center":[torch.stack([centers[b][l] for b in range(B)]) for l in range(L)],
+    }

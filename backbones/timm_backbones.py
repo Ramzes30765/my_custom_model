@@ -2,7 +2,7 @@ import timm
 import torch.nn as nn
 
 class BackboneWrapper(nn.Module):
-    def __init__(self, name='resnet50', pretrained=False, out_indices=(-4, -3, -2, -1), checkpoint_path=None):
+    def __init__(self, name='resnet50', pretrained=True, out_indices=(-4, -3, -2, -1), checkpoint_path=None):
         super().__init__()
         self.model = timm.create_model(
             name,
